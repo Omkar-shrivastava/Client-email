@@ -7,9 +7,7 @@ Features: Email sender, Form receiver, Database storage with SQLAlchemy, PO Numb
 from flask import Flask, render_template_string, request, jsonify, url_for
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import requests
 import secrets
 import os
 import socket
@@ -25,12 +23,8 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize Database
 db = SQLAlchemy(app)
-
-# SMTP Configuration
-SMTP_SERVER = 'smtp.gmail.com'
-SMTP_PORT = 587
 SENDER_EMAIL = os.environ.get("SENDER_EMAIL")
-SENDER_PASSWORD = os.environ.get("SENDER_PASSWORD")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 
 # ==================== DATABASE MODELS ====================
 
@@ -91,9 +85,35 @@ with app.app_context():
     db.create_all()
 
 # ==================== EMAIL FUNCTIONS ====================
+def send_email_resend(to_email, subject, html_body):
+    """Send email using Resend API"""
+    try:
+        url = "https://api.resend.com/emails"
+
+        headers = {
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "from": f"Vaayushanti <{SENDER_EMAIL}>",
+            "to": [to_email],
+            "subject": subject,
+            "html": html_body
+        }
+
+        response = requests.post(url, json=payload, headers=headers)
+
+        print("📩 RESEND RESPONSE:", response.status_code, response.text)
+
+        return response.status_code == 200
+
+    except Exception as e:
+        print(f"❌ RESEND ERROR: {str(e)}")
+        return False
 
 def send_form_email(recipient_email, token, po_number=None):
-    """Send form link to recipient via email (FULL DESIGN + SAFE SMTP)"""
+    """Send form link to recipient via email (RESEND VERSION)"""
     try:
         form_url = url_for('filter_form', token=token, _external=True)
 
@@ -141,35 +161,16 @@ def send_form_email(recipient_email, token, po_number=None):
         </html>
         """
 
-        # ✅ EMAIL SETUP
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = SENDER_EMAIL
-        msg['To'] = recipient_email
-
-        html_part = MIMEText(html_body, 'html')
-        msg.attach(html_part)
-
-        # ✅ TIMEOUT FIX
-        import socket
-        socket.setdefaulttimeout(10)
-
-        # ✅ SMTP SEND
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
-
-        return True   # ✅ correct position
+        return send_email_resend(recipient_email, subject, html_body)
 
     except Exception as e:
-        print(f"❌ SMTP ERROR: {str(e)}")
+        print(f"❌ ERROR: {str(e)}")
         return False
 
 
+
 def send_submission_notification(submissions_list):
-    """Send notification to sender when form is submitted - UPDATED for multiple bags"""
+    """Send notification to sender when form is submitted - UPDATED for multiple bags (RESEND)"""
     try:
         first_submission = submissions_list[0]
         bag_count = len(submissions_list)
@@ -294,32 +295,16 @@ def send_submission_notification(submissions_list):
         </html>
         """
 
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = SENDER_EMAIL
-        msg['To'] = SENDER_EMAIL
-        
-        html_part = MIMEText(html_body, 'html')
-        msg.attach(html_part)
-
-        # 🔥 SMTP FIX
-        import socket
-        socket.setdefaulttimeout(10)
-
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
-        
-        return True
+        # ✅ RESEND CALL (SMTP removed)
+        return send_email_resend(SENDER_EMAIL, subject, html_body)
 
     except Exception as e:
         print(f"❌ Error sending notification: {str(e)}")
         return False
 
+
 def send_client_submission_notification(submissions_list):
-    """Send detailed submission email to client with Edit option"""
+    """Send detailed submission email to client with Edit option (RESEND)"""
     try:
         first_submission = submissions_list[0]
         bag_count = len(submissions_list)
@@ -423,19 +408,8 @@ def send_client_submission_notification(submissions_list):
         </html>
         """
 
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = SENDER_EMAIL
-        msg['To'] = first_submission.recipient_email
-        msg.attach(MIMEText(html_body, 'html'))
-
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_PASSWORD)
-            server.send_message(msg)
-
-        return True   # ✅ WITH ke bahar
+        # ✅ RESEND CALL (SMTP removed)
+        return send_email_resend(first_submission.recipient_email, subject, html_body)
 
     except Exception as e:
         print(f"❌ Error sending client notification: {str(e)}")
