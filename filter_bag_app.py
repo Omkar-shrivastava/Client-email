@@ -398,23 +398,22 @@ def sender_page():
     """Admin page to send form links to recipients"""
     return render_template_string(SENDER_HTML)
 
-
 @app.route('/api/send-form', methods=['POST'])
 def send_form():
-    """API endpoint to send form link to recipient"""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
 
         if not data:
             return jsonify({
                 'success': False,
-                'message': 'Invalid request data'
+                'message': 'No JSON data received'
             }), 400
 
         recipient_email = data.get('recipient_email', '').strip()
         po_number = data.get('po_number', '').strip()
         admin_quantity = data.get('admin_quantity')
         admin_size = data.get('admin_size', '').strip()
+
 
         # ================= VALIDATIONS =================
 
@@ -485,9 +484,9 @@ def send_form():
 
 @app.route('/api/generate-link', methods=['POST'])
 def generate_link():
-    """API endpoint to generate form link without sending email"""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
+
         po_number = data.get('po_number', '').strip()
         
         token = secrets.token_urlsafe(32)
@@ -509,10 +508,12 @@ def generate_link():
         })
     
     except Exception as e:
+        print("ERROR:", str(e))  # 👈 IMPORTANT (logs me dikhega)
         return jsonify({
             'success': False,
             'message': f'Error: {str(e)}'
         }), 500
+
 
 
 @app.route('/form/<token>')
@@ -554,7 +555,9 @@ def submit_form(token):
                 'message': 'Invalid form link or already submitted'
             }), 404
 
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
+        print("DEBUG DATA:", data)
+
         bags = data.get('bags', [])
 
         if not bags:
@@ -570,28 +573,18 @@ def submit_form(token):
             token=token,
             recipient_email=parent_submission.recipient_email,
             po_number=parent_submission.po_number,
-
-            # ✅ ADMIN DATA COPY
             admin_quantity=parent_submission.admin_quantity,
             admin_size=parent_submission.admin_size,
-
-            # Bag data
             bag_type=bag.get('bag_type'),
             collar_od=bag.get('collar_od'),
             collar_id=bag.get('collar_id'),
             tubesheet_data=bag.get('tubesheet_data'),
             tubesheet_dia=bag.get('tubesheet_dia'),
-
-            # Client data
             client_name=bag.get('client_name'),
             client_email=bag.get('client_email'),
-
-            # ✅ IMPORTANT: Quantity = Admin Quantity
             quantity=parent_submission.admin_quantity,
-
             delivery_date=None,
             remarks=data.get('global_remarks'),
-
             submitted=True,
             submitted_at=datetime.utcnow()
         )
@@ -608,16 +601,18 @@ def submit_form(token):
 
         return jsonify({
             'success': True,
-            'message': 'Successfully submitted bag specification! Thank you for your response.',
+            'message': 'Successfully submitted bag specification!',
             'bags_count': 1
         })
 
     except Exception as e:
+        print("ERROR:", str(e))   # 👈 logs me dikhega
         db.session.rollback()
         return jsonify({
             'success': False,
             'message': f'Error submitting form: {str(e)}'
         }), 500
+
 
 
 @app.route('/submissions')
@@ -912,7 +907,16 @@ SENDER_HTML = """
                     })
                 });
                 
-                const data = await response.json();
+                const text = await response.text();
+
+let data;
+try {
+    data = JSON.parse(text);
+} catch (e) {
+    console.error("RAW RESPONSE:", text);
+    throw new Error("Server returned HTML instead of JSON");
+}
+
                 
                 messageDiv.style.display = 'block';
                 if (data.success) {
@@ -953,7 +957,19 @@ SENDER_HTML = """
                     body: JSON.stringify({ po_number: poNumber })
                 });
                 
-                const data = await response.json();
+const text = await response.text();
+
+let data;
+try {
+    data = JSON.parse(text);
+} catch (e) {
+    console.error("RAW RESPONSE:", text);
+    messageDiv.style.display = 'block';
+    messageDiv.className = 'message error';
+    messageDiv.innerHTML = '❌ Server returned invalid response (HTML)';
+    return;
+}
+
                 
                 if (data.success) {
                     messageDiv.style.display = 'block';
@@ -1014,7 +1030,19 @@ SENDER_HTML = """
                     })
                 });
                 
-                const data = await response.json();
+                const text = await response.text();
+
+let data;
+try {
+    data = JSON.parse(text);
+} catch (e) {
+    console.error("RAW RESPONSE:", text);
+    messageDiv.style.display = 'block';
+    messageDiv.className = 'message error';
+    messageDiv.innerHTML = '❌ Server returned invalid response (HTML)';
+    return;
+}
+
                 
                 messageDiv.style.display = 'block';
                 if (data.success) {
@@ -1048,7 +1076,19 @@ SENDER_HTML = """
             
             try {
                 const response = await fetch(`/api/sizes/${bagType}`);
-                const data = await response.json();
+                const text = await response.text();
+
+let data;
+try {
+    data = JSON.parse(text);
+} catch (e) {
+    console.error("RAW RESPONSE:", text);
+    messageDiv.style.display = 'block';
+    messageDiv.className = 'message error';
+    messageDiv.innerHTML = '❌ Server returned invalid response (HTML)';
+    return;
+}
+
                 
                 if (data.success && data.sizes.length > 0) {
                     let html = '';
@@ -1081,7 +1121,19 @@ SENDER_HTML = """
                     method: 'DELETE'
                 });
                 
-                const data = await response.json();
+               const text = await response.text();
+
+let data;
+try {
+    data = JSON.parse(text);
+} catch (e) {
+    console.error("RAW RESPONSE:", text);
+    messageDiv.style.display = 'block';
+    messageDiv.className = 'message error';
+    messageDiv.innerHTML = '❌ Server returned invalid response (HTML)';
+    return;
+}
+
                 
                 if (data.success) {
                     loadSizes(); // Reload list
@@ -1443,14 +1495,14 @@ FILTER_FORM_HTML = """
                         <div class="bag-type-selection">
                             <label class="bag-type-card" data-bag="${bagNumber}" data-type="collar">
                                 <input type="radio" name="bag_type_${bagNumber}" value="collar">
-                                <img src="{{ url_for('static', filename='collar.webp') }}" class="bag-type-img" alt="Collar">
+                                <img src="/static/collar.webp" class="bag-type-img" alt="Collar">
                                 <div class="bag-type-name">⭕ Collar</div>
                                 <div class="bag-type-desc">Collar Type</div>
                             </label>
                             
                             <label class="bag-type-card" data-bag="${bagNumber}" data-type="snap">
                                 <input type="radio" name="bag_type_${bagNumber}" value="snap">
-                                <img src="{{ url_for('static', filename='snap-ring.jpeg') }}" class="bag-type-img" alt="Snap">
+                                <img src="/static/snap-ring.jpeg" class="bag-type-img" alt="Snap">
                                 <div class="bag-type-name">📌 Snap</div>
                                 <div class="bag-type-desc">Snap Type</div>
                             </label>
@@ -1458,7 +1510,7 @@ FILTER_FORM_HTML = """
                             <label class="bag-type-card" data-bag="${bagNumber}" data-type="ring">
                                 <input type="radio" name="bag_type_${bagNumber}" value="ring">
                                 <div class="ring-image-container">
-                                    <img src="{{ url_for('static', filename='Gi.jpeg') }}" alt="Steel Ring">
+                                    <img src="/static/GI.jpeg" alt="Steel Ring">
                                 </div>
                                 <div class="bag-type-name"> Ring</div>
                                 <div class="bag-type-desc">Ring Type</div>
@@ -1576,7 +1628,19 @@ else if (type === 'ring') {
 async function loadBagSizes(bagNumber, bagType) {
     try {
         const response = await fetch(`/api/sizes/${bagType}`);
-        const data = await response.json();
+        const text = await response.text();
+
+let data;
+try {
+    data = JSON.parse(text);
+} catch (e) {
+    console.error("RAW RESPONSE:", text);
+    messageDiv.style.display = 'block';
+    messageDiv.className = 'message error';
+    messageDiv.innerHTML = '❌ Server returned invalid response (HTML)';
+    return;
+}
+
 
         if (!data.success) return;
 
@@ -1716,13 +1780,28 @@ else if (bagType === 'ring') {
             };
             
             try {
-                const response = await fetch('/api/submit-form/{{ token }}', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
-                });
+const token = "{{ token }}";
+
+const response = await fetch(`/api/submit-form/${token}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(formData)
+});
+
                 
-                const data = await response.json();
+               const text = await response.text();
+
+let data;
+try {
+    data = JSON.parse(text);
+} catch (e) {
+    console.error("RAW RESPONSE:", text);
+    messageDiv.style.display = 'block';
+    messageDiv.className = 'message error';
+    messageDiv.innerHTML = '❌ Server returned invalid response (HTML)';
+    return;
+}
+
                 
                 loadingOverlay.classList.remove('active');
                 
@@ -1917,4 +1996,5 @@ if __name__ == '__main__':
     
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+    
 
