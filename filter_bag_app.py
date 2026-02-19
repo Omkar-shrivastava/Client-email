@@ -1488,7 +1488,7 @@ FILTER_FORM_HTML = """
                             <label class="bag-type-card" data-bag="${bagNumber}" data-type="ring">
                                 <input type="radio" name="bag_type_${bagNumber}" value="ring">
                                 <div class="ring-image-container">
-                                    <img src="{{ url_for('static', filename='Gi.jpeg') }}" alt="Steel Ring">
+                                    <img src="{{ url_for('static', filename='GI.jpeg') }}" alt="Steel Ring">
                                 </div>
                                 <div class="bag-type-name"> Ring</div>
                                 <div class="bag-type-desc">Ring Type</div>
