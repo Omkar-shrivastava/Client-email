@@ -12,6 +12,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import secrets
 import os
+import socket
+socket.setdefaulttimeout(10)
+
 
 
 # Initialize Flask App
@@ -90,14 +93,14 @@ with app.app_context():
 # ==================== EMAIL FUNCTIONS ====================
 
 def send_form_email(recipient_email, token, po_number=None):
-    """Send form link to recipient via email"""
+    """Send form link to recipient via email (FULL DESIGN + SAFE SMTP)"""
     try:
         form_url = url_for('filter_form', token=token, _external=True)
-        
+
         po_info = f"<p><strong>PO Number:</strong> {po_number}</p>" if po_number else ""
-        
+
         subject = "🔧 Filter Bag Specification Request"
-        
+
         html_body = f"""
         <!DOCTYPE html>
         <html>
@@ -119,39 +122,49 @@ def send_form_email(recipient_email, token, po_number=None):
                 </div>
                 <div class="content">
                     <p>Dear Valued Client,</p>
-                    <p>To proceed with your order, we kindly request you to share the filter bag specifications. Please click the button below to complete the specification form at your convenience.</p>
+                    <p>To proceed with your order, we kindly request you to share the filter bag specifications.</p>
+                    
                     {po_info}
+
                     <center>
                         <a href="{form_url}" class="button">📋 Fill Specification Form</a>
                     </center>
-                    <p><strong>Note:</strong> This link is unique to you and can only be used once. Please complete the form at your earliest convenience.</p>
+
+                    <p><strong>Note:</strong> This link is unique to you and can only be used once.</p>
                 </div>
                 <div class="footer">
                     <p><strong>Filter Bag Specification System</strong></p>
-                    <p>If you have any questions, please contact us at {SENDER_EMAIL}</p>
+                    <p>Contact: {SENDER_EMAIL}</p>
                 </div>
             </div>
         </body>
         </html>
         """
-        
+
+        # ✅ EMAIL SETUP
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = SENDER_EMAIL
         msg['To'] = recipient_email
-        
+
         html_part = MIMEText(html_body, 'html')
         msg.attach(html_part)
-        
-        # Send email
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+
+        # ✅ TIMEOUT FIX
+        import socket
+        socket.setdefaulttimeout(10)
+
+        # ✅ SMTP SEND
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+            server.ehlo()
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
-        
-        return True
+
+        return True   # ✅ correct position
+
     except Exception as e:
-        print(f"Error sending email: {str(e)}")
+        print(f"❌ SMTP ERROR: {str(e)}")
         return False
 
 
@@ -184,11 +197,19 @@ def send_submission_notification(submissions_list):
             bags_details += f"""
             <h4 style="color: #1f3c88; margin-top: 20px;">🛍️ Bag #{idx} - {submission.bag_type.title() if submission.bag_type else 'N/A'}</h4>
             <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
-                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Bag Type:</strong></td>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">{submission.bag_type.title() if submission.bag_type else 'N/A'}</td></tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Bag Type:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">
+                        {submission.bag_type.title() if submission.bag_type else 'N/A'}
+                    </td>
+                </tr>
                 {spec_details}
-                <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Quantity:</strong></td>
-                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">{submission.quantity or 'N/A'}</td></tr>
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Quantity:</strong></td>
+                    <td style="padding: 8px; border-bottom: 1px solid #ddd;">
+                        {submission.quantity or 'N/A'}
+                    </td>
+                </tr>
             </table>
             """
         
@@ -211,33 +232,59 @@ def send_submission_notification(submissions_list):
             <div class="container">
                 <div class="header">
                     <h1>✅ Form Submitted Successfully</h1>
-                    <p class="success-badge">New Submission Received ({bag_count} Bag{'s' if bag_count > 1 else ''})</p>
+                    <p class="success-badge">
+                        New Submission Received ({bag_count} Bag{'s' if bag_count > 1 else ''})
+                    </p>
                 </div>
+
                 <div class="content">
                     <p><strong>Good news!</strong> A client has successfully submitted the filter bag specification form.</p>
                     
                     <h3>📋 Client Details:</h3>
                     <table>
-                        <tr><td><strong>Client Name:</strong></td><td>{first_submission.client_name}</td></tr>
-                        <tr><td><strong>Client Email:</strong></td><td>{first_submission.client_email}</td></tr>
-                        <tr><td><strong>PO Number:</strong></td><td>{first_submission.po_number or 'N/A'}</td></tr>
-                        <tr><td><strong> Quantity:</strong></td>
-    <td>{first_submission.admin_quantity or 'N/A'}</td></tr>
-
-<tr><td><strong> Size:</strong></td>
-    <td>{first_submission.admin_size or 'N/A'}</td></tr>
-
-                        <tr><td><strong>Total Bags:</strong></td><td>{bag_count}</td></tr>
-                        <tr><td><strong>Submitted At:</strong></td><td>{first_submission.submitted_at.strftime('%d %b %Y, %I:%M %p') if first_submission.submitted_at else 'N/A'}</td></tr>
+                        <tr>
+                            <td><strong>Client Name:</strong></td>
+                            <td>{first_submission.client_name}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Client Email:</strong></td>
+                            <td>{first_submission.client_email}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>PO Number:</strong></td>
+                            <td>{first_submission.po_number or 'N/A'}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Quantity:</strong></td>
+                            <td>{first_submission.admin_quantity or 'N/A'}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Size:</strong></td>
+                            <td>{first_submission.admin_size or 'N/A'}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Total Bags:</strong></td>
+                            <td>{bag_count}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Submitted At:</strong></td>
+                            <td>
+                                {first_submission.submitted_at.strftime('%d %b %Y, %I:%M %p') if first_submission.submitted_at else 'N/A'}
+                            </td>
+                        </tr>
                     </table>
                     
                     <h3 style="margin-top: 30px;">🛍️ Bag Specifications:</h3>
                     {bags_details}
                     
-                    <p style="margin-top: 20px;"><strong>Overall Remarks:</strong><br>{first_submission.remarks or 'No additional remarks'}</p>
+                    <p style="margin-top: 20px;">
+                        <strong>Overall Remarks:</strong><br>
+                        {first_submission.remarks or 'No additional remarks'}
+                    </p>
                     
                     <p>You can view all submissions in your dashboard.</p>
                 </div>
+
                 <div class="footer">
                     <p><strong>Filter Bag Specification System</strong></p>
                     <p>Automated notification - Do not reply to this email</p>
@@ -246,7 +293,7 @@ def send_submission_notification(submissions_list):
         </body>
         </html>
         """
-        
+
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = SENDER_EMAIL
@@ -254,15 +301,21 @@ def send_submission_notification(submissions_list):
         
         html_part = MIMEText(html_body, 'html')
         msg.attach(html_part)
-        
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+
+        # 🔥 SMTP FIX
+        import socket
+        socket.setdefaulttimeout(10)
+
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+            server.ehlo()
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
         
         return True
+
     except Exception as e:
-        print(f"Error sending notification: {str(e)}")
+        print(f"❌ Error sending notification: {str(e)}")
         return False
 
 def send_client_submission_notification(submissions_list):
@@ -329,44 +382,43 @@ def send_client_submission_notification(submissions_list):
                 <div class="header">
                     <h2>✅ Thank You for Your Submission</h2>
                 </div>
-               <div class="content">
-    <p>Your filter bag specification has been successfully submitted.</p>
+                <div class="content">
+                    <p>Your filter bag specification has been successfully submitted.</p>
 
-    <!-- PO & Admin Approved Details -->
-    <table>
-        <tr>
-            <td><strong>PO Number:</strong></td>
-            <td>{first_submission.po_number or 'N/A'}</td>
-        </tr>
-        <tr>
-            <td><strong>Quantity:</strong></td>
-            <td>{first_submission.admin_quantity or 'N/A'}</td>
-        </tr>
-        <tr>
-            <td><strong>Size:</strong></td>
-            <td>{first_submission.admin_size or 'N/A'}</td>
-        </tr>
-        <tr>
-            <td><strong>Total Bags Submitted:</strong></td>
-            <td>{bag_count}</td>
-        </tr>
-    </table>
+                    <table>
+                        <tr>
+                            <td><strong>PO Number:</strong></td>
+                            <td>{first_submission.po_number or 'N/A'}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Quantity:</strong></td>
+                            <td>{first_submission.admin_quantity or 'N/A'}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Size:</strong></td>
+                            <td>{first_submission.admin_size or 'N/A'}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Total Bags Submitted:</strong></td>
+                            <td>{bag_count}</td>
+                        </tr>
+                    </table>
 
-    <h3>📋 Submission Details</h3>
-    {bags_details}
+                    <h3>📋 Submission Details</h3>
+                    {bags_details}
 
-    <p><strong>Overall Remarks:</strong><br>
-    {first_submission.remarks or 'No additional remarks'}</p>
+                    <p><strong>Overall Remarks:</strong><br>
+                    {first_submission.remarks or 'No additional remarks'}</p>
 
-    <a href="{form_url}" class="edit-btn">
-        ✏️ Edit & Re-Submit Form
-    </a>
+                    <a href="{form_url}" class="edit-btn">
+                        ✏️ Edit & Re-Submit Form
+                    </a>
 
-    <p style="margin-top:20px;">
-    If any information is incorrect, you can click the button above to update your submission.
-    </p>
-</div>
-
+                    <p style="margin-top:20px;">
+                    If any information is incorrect, you can click the button above to update your submission.
+                    </p>
+                </div>
+            </div>
         </body>
         </html>
         """
@@ -375,18 +427,18 @@ def send_client_submission_notification(submissions_list):
         msg['Subject'] = subject
         msg['From'] = SENDER_EMAIL
         msg['To'] = first_submission.recipient_email
-
         msg.attach(MIMEText(html_body, 'html'))
 
-        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10) as server:
+            server.ehlo()
             server.starttls()
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.send_message(msg)
 
-        return True
+        return True   # ✅ WITH ke bahar
 
     except Exception as e:
-        print(f"Error sending client notification: {str(e)}")
+        print(f"❌ Error sending client notification: {str(e)}")
         return False
 
 
@@ -619,7 +671,6 @@ def submit_form(token):
             'success': False,
             'message': f'Error submitting form: {str(e)}'
         }), 500
-
 
 @app.route('/submissions')
 def view_submissions():
