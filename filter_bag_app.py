@@ -82,10 +82,18 @@ class BagSize(db.Model):
     
     def __repr__(self):
         return f'<BagSize {self.size_name} - {self.bag_type}>'
-
-# Create tables
 with app.app_context():
     db.create_all()
+
+# ✅ YEH ADD KARO — crashes ko JSON mein convert karega
+@app.errorhandler(Exception)
+def handle_exception(e):
+    db.session.rollback()
+    return jsonify({'success': False, 'message': f'Server error: {str(e)}'}), 500
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({'success': False, 'message': 'Not found'}), 404
 
 # ==================== EMAIL FUNCTIONS ====================
 
