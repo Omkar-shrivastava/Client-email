@@ -545,7 +545,11 @@ def generate_link():
 @app.route('/form/<token>')
 def filter_form(token):
     """Display filter bag specification form to recipient"""
-    submission = FilterBagSubmission.query.filter_by(token=token).first()
+    submission = FilterBagSubmission.query.filter_by(
+    token=token,
+    submitted=False
+).first()
+
     
     if not submission:
         return """
