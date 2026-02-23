@@ -516,13 +516,34 @@ def generate_link():
     try:
         data = request.get_json(silent=True) or {}
         po_number = data.get('po_number', '').strip()
-        
+        admin_quantity = data.get('admin_quantity')
+        admin_size = data.get('admin_size', '').strip()
+
+        # ================= VALIDATIONS =================
+        if not admin_quantity or not admin_size:
+            return jsonify({
+                'success': False,
+                'message': 'Please provide Quantity and Size'
+            }), 400
+
+        try:
+            admin_quantity = int(admin_quantity)
+            if admin_quantity <= 0:
+                raise ValueError
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'message': 'Quantity must be a valid positive number'
+            }), 400
+
         token = secrets.token_urlsafe(32)
         
         submission = FilterBagSubmission(
             token=token,
             recipient_email='direct-link-generated',
-            po_number=po_number if po_number else None
+            po_number=po_number if po_number else None,
+            admin_quantity=admin_quantity,
+            admin_size=admin_size
         )
         db.session.add(submission)
         db.session.commit()
@@ -536,6 +557,7 @@ def generate_link():
         })
     
     except Exception as e:
+        db.session.rollback()
         return jsonify({
             'success': False,
             'message': f'Error: {str(e)}'
@@ -755,6 +777,8 @@ SENDER_HTML = """
         .tab-content.active { display: block; }
         select { cursor: pointer; }
         select:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+        .po-config-box { background:#fff3cd; padding:20px; border-radius:10px; margin-bottom:30px; border-left:5px solid #ffc107; }
+        .po-config-box h3 { margin-bottom:15px; color:#856404; }
     </style>
 </head>
 <body>
@@ -768,63 +792,71 @@ SENDER_HTML = """
             <div class="info-box">
                 <strong>ℹ️ How it works:</strong>
                 <ul style="margin-left: 20px; margin-top: 10px;">
-                    <li><strong>Send via Email:</strong> Enter client email and PO number. They'll receive an email with the form link.</li>
-                    <li><strong>Generate Link:</strong> Create a shareable form link without sending an email. Just add a PO number.</li>
+                    <li><strong>Send via Email:</strong> Enter client email. They'll receive an email with the form link.</li>
+                    <li><strong>Generate Link:</strong> Create a shareable form link without sending an email.</li>
                 </ul>
             </div>
-            <!-- Admin PO Configuration -->
-<div style="background:#fff3cd; padding:20px; border-radius:10px; margin-bottom:30px; border-left:5px solid #ffc107;">
-    <h3 style="margin-bottom:15px; color:#856404;">📦 PO Configuration (Admin Control)</h3>
-
-    <div class="form-group">
-        <label>📋 PO Number</label>
-        <input type="text" id="poNumber" placeholder="Enter PO Number (e.g., PO-2026-001)">
-    </div>
-
-    <div class="form-group">
-        <label>📦 Quantity (Required)</label>
-        <input type="number" id="adminQuantity" placeholder="Enter Quantity" min="1">
-    </div>
-
-    <div class="form-group">
-        <label>📏 Size (Required)</label>
-        <input type="text" id="adminSize" placeholder="Enter Size (e.g., 150mm x 120mm)">
-    </div>
-</div>
-
 
             <div class="tabs">
-                <button class="tab active" onclick="switchTab('email')">📧 Send via Email</button>
-                <button class="tab" onclick="switchTab('link')">🔗 Generate Link</button>
-                <button class="tab" onclick="switchTab('sizes')">📏 Manage Sizes</button>
+                <button class="tab active" onclick="switchTab('email', event)">📧 Send via Email</button>
+                <button class="tab" onclick="switchTab('link', event)">🔗 Generate Link</button>
+                <button class="tab" onclick="switchTab('sizes', event)">📏 Manage Sizes</button>
             </div>
 
-            <!-- Email Tab -->
+            <!-- ===== EMAIL TAB ===== -->
             <div id="emailTab" class="tab-content active">
                 <div id="emailMessage" class="message"></div>
+
+                <!-- PO Config inside Email Tab -->
+                <div class="po-config-box">
+                    <h3>📦 PO Configuration</h3>
+                    <div class="form-group">
+                        <label>📋 PO Number</label>
+                        <input type="text" id="poNumber" placeholder="Enter PO Number (e.g., PO-2026-001)">
+                    </div>
+                    <div class="form-group">
+                        <label>📦 Quantity (Required)</label>
+                        <input type="number" id="adminQuantity" placeholder="Enter Quantity" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>📏 Size (Required)</label>
+                        <input type="text" id="adminSize" placeholder="Enter Size (e.g., 150mm x 120mm)">
+                    </div>
+                </div>
                 
                 <form id="emailForm">
                     <div class="form-group">
                         <label>📬 Recipient Email Address *</label>
                         <input type="email" id="recipientEmail" placeholder="client@example.com" required>
                     </div>
-                    
                     <button type="submit" class="btn" id="sendBtn">
                         🚀 Send Form Link
                     </button>
                 </form>
             </div>
 
-            <!-- Link Generation Tab -->
+            <!-- ===== GENERATE LINK TAB ===== -->
             <div id="linkTab" class="tab-content">
                 <div id="linkMessage" class="message"></div>
+
+                <!-- PO Config inside Link Tab -->
+                <div class="po-config-box">
+                    <h3>📦 PO Configuration</h3>
+                    <div class="form-group">
+                        <label>📋 PO Number</label>
+                        <input type="text" id="poNumberLink" placeholder="Enter PO Number (e.g., PO-2026-001)">
+                    </div>
+                    <div class="form-group">
+                        <label>📦 Quantity (Required)</label>
+                        <input type="number" id="adminQuantityLink" placeholder="Enter Quantity" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>📏 Size (Required)</label>
+                        <input type="text" id="adminSizeLink" placeholder="Enter Size (e.g., 150mm x 120mm)">
+                    </div>
+                </div>
                 
                 <form id="linkForm">
-                    <div class="form-group">
-                        <label>📋 PO Number (Optional)</label>
-                        <input type="text" id="poNumberLink" placeholder="Enter PO Number (e.g., PO-2024-001)">
-                    </div>
-                    
                     <button type="submit" class="btn link-btn" id="generateBtn">
                         🔗 Generate Form Link
                     </button>
@@ -837,7 +869,7 @@ SENDER_HTML = """
                 </div>
             </div>
 
-            <!-- Size Management Tab -->
+            <!-- ===== SIZE MANAGEMENT TAB ===== -->
             <div id="sizesTab" class="tab-content">
                 <div id="sizeMessage" class="message"></div>
                 
@@ -853,7 +885,7 @@ SENDER_HTML = """
                             <option value="">-- Select Bag Type --</option>
                             <option value="collar">⭕ Collar Type</option>
                             <option value="snap">📌 Snap Type</option>
-                            <option value="ring">💍 Ring Type</option>
+                            <option value="ring"> Ring Type</option>
                         </select>
                     </div>
                     
@@ -875,7 +907,7 @@ SENDER_HTML = """
                         <select id="filterBagType" onchange="loadSizes()" style="width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 8px; font-size: 15px;">
                             <option value="collar">⭕ Collar Type</option>
                             <option value="snap">📌 Snap Type</option>
-                            <option value="ring">💍 Ring Type</option>
+                            <option value="ring">Ring Type</option>
                         </select>
                     </div>
 
@@ -899,7 +931,7 @@ SENDER_HTML = """
     <script>
         let currentTab = 'email';
 
-        function switchTab(tab) {
+        function switchTab(tab, event) {
             currentTab = tab;
             
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -912,10 +944,11 @@ SENDER_HTML = """
                 document.getElementById('linkTab').classList.add('active');
             } else if (tab === 'sizes') {
                 document.getElementById('sizesTab').classList.add('active');
-                loadSizes(); // Load sizes when tab opens
+                loadSizes();
             }
         }
 
+        // ===== EMAIL FORM SUBMIT =====
         document.getElementById('emailForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -949,6 +982,9 @@ SENDER_HTML = """
                     messageDiv.className = 'message success';
                     messageDiv.innerHTML = `✅ ${data.message}`;
                     document.getElementById('emailForm').reset();
+                    document.getElementById('poNumber').value = '';
+                    document.getElementById('adminQuantity').value = '';
+                    document.getElementById('adminSize').value = '';
                 } else {
                     messageDiv.className = 'message error';
                     messageDiv.innerHTML = `❌ ${data.message}`;
@@ -963,6 +999,7 @@ SENDER_HTML = """
             }
         });
 
+        // ===== GENERATE LINK FORM SUBMIT =====
         document.getElementById('linkForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -970,6 +1007,8 @@ SENDER_HTML = """
             const messageDiv = document.getElementById('linkMessage');
             const generatedLinkDiv = document.getElementById('generatedLink');
             const poNumber = document.getElementById('poNumberLink').value;
+            const adminQuantity = document.getElementById('adminQuantityLink').value;
+            const adminSize = document.getElementById('adminSizeLink').value;
             
             btn.disabled = true;
             btn.textContent = 'Generating link...';
@@ -980,7 +1019,11 @@ SENDER_HTML = """
                 const response = await fetch('/api/generate-link', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ po_number: poNumber })
+                    body: JSON.stringify({
+                        po_number: poNumber,
+                        admin_quantity: adminQuantity,
+                        admin_size: adminSize
+                    })
                 });
                 
                 const data = await response.json();
@@ -1014,7 +1057,7 @@ SENDER_HTML = """
             });
         }
 
-        // Size Management Functions
+        // ===== SIZE MANAGEMENT =====
         document.getElementById('sizeForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -1052,7 +1095,6 @@ SENDER_HTML = """
                     messageDiv.innerHTML = `✅ ${data.message}`;
                     document.getElementById('sizeForm').reset();
                     
-                    // Reload sizes if same bag type is selected
                     if (document.getElementById('filterBagType').value === bagType) {
                         loadSizes();
                     }
@@ -1102,19 +1144,14 @@ SENDER_HTML = """
         }
 
         async function deleteSize(sizeId, sizeName) {
-            if (!confirm(`Delete size "${sizeName}"?`)) {
-                return;
-            }
+            if (!confirm(`Delete size "${sizeName}"?`)) return;
             
             try {
-                const response = await fetch(`/api/sizes/${sizeId}`, {
-                    method: 'DELETE'
-                });
-                
+                const response = await fetch(`/api/sizes/${sizeId}`, { method: 'DELETE' });
                 const data = await response.json();
                 
                 if (data.success) {
-                    loadSizes(); // Reload list
+                    loadSizes();
                     const messageDiv = document.getElementById('sizeMessage');
                     messageDiv.style.display = 'block';
                     messageDiv.className = 'message success';
@@ -1127,13 +1164,6 @@ SENDER_HTML = """
                 alert(`Error: ${error.message}`);
             }
         }
-
-        // Load sizes on page load
-        window.addEventListener('DOMContentLoaded', () => {
-            if (document.getElementById('sizesTab')) {
-                loadSizes();
-            }
-        });
     </script>
 </body>
 </html>
@@ -1151,7 +1181,6 @@ FILTER_FORM_HTML = """
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #1f3c88 0%, #1e5aa8 100%); min-height: 100vh; padding: 20px; }
         .container { max-width: 900px; margin: 0 auto; background: white; border-radius: 15px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden; }
         
-        /* Header with Logo */
         .header {
             background: linear-gradient(135deg, #1f3c88 0%, #1e5aa8 100%);
             padding: 25px 30px;
@@ -1190,13 +1219,11 @@ FILTER_FORM_HTML = """
             margin-top: 5px;
         }
 
-        /* Content Area */
         .content { padding: 40px; }
         .po-info { background: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 25px; border-left: 5px solid #ffc107; }
         .po-info strong { color: #856404; }
         .info-box { background: #e3f2fd; padding: 20px; border-radius: 10px; margin-bottom: 30px; border-left: 5px solid #1e5aa8; }
         
-        /* ===== NEW: BAG CARD STYLES ===== */
         .bag-specifications-container {
             display: flex;
             flex-direction: column;
@@ -1254,12 +1281,10 @@ FILTER_FORM_HTML = """
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(40, 167, 69, 0.3);
         }
-        /* ===== END NEW STYLES ===== */
         
         .form-section { margin-bottom: 40px; }
         .section-title { font-size: 1.3em; color: #1f3c88; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #1e5aa8; }
         
-        /* Bag Type Cards */
         .bag-type-selection { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px; }
         .bag-type-card { border: 3px solid #ddd; border-radius: 15px; padding: 15px; cursor: pointer; transition: all 0.3s; text-align: center; background: white; position: relative; }
         .bag-type-card:hover { border-color: #1e5aa8; box-shadow: 0 5px 15px rgba(30, 90, 168, 0.3); transform: translateY(-3px); }
@@ -1269,7 +1294,6 @@ FILTER_FORM_HTML = """
         .bag-type-name { font-size: 1.1em; font-weight: 600; color: #1f3c88; margin-bottom: 8px; }
         .bag-type-desc { font-size: 0.85em; color: #666; }
         
-        /* Ring Card Images */
         .ring-image-container {
             display: flex;
             gap: 8px;
@@ -1283,19 +1307,16 @@ FILTER_FORM_HTML = """
             object-fit: contain;
         }
 
-        /* Conditional Sections */
         .conditional-section { display: none; padding: 20px; background: white; border-radius: 10px; border: 2px solid #e3f2fd; margin-top: 15px; }
         .conditional-section.active { display: block; animation: slideDown 0.3s ease; }
         @keyframes slideDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* Form Elements */
         .form-group { margin-bottom: 18px; }
         label { display: block; margin-bottom: 8px; font-weight: 600; color: #1f3c88; font-size: 0.95em; }
         input, textarea { width: 100%; padding: 12px 15px; border: 2px solid #ddd; border-radius: 8px; font-size: 15px; font-family: inherit; transition: all 0.3s; }
         input:focus, textarea:focus { outline: none; border-color: #1e5aa8; box-shadow: 0 0 0 3px rgba(30, 90, 168, 0.1); }
         textarea { min-height: 80px; resize: vertical; }
         
-        /* Tubesheet Reference Image */
         .field-with-image {
             display: flex;
             gap: 15px;
@@ -1316,7 +1337,6 @@ FILTER_FORM_HTML = """
             background: white;
         }
         
-        /* Submit Button */
         .submit-btn { 
             width: 100%; 
             max-width: 400px;
@@ -1335,21 +1355,17 @@ FILTER_FORM_HTML = """
         .submit-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(30, 90, 168, 0.4); }
         .submit-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         
-        /* Messages */
         .message { padding: 15px; border-radius: 8px; margin-bottom: 20px; display: none; font-weight: 500; }
         .success { background: #d4edda; color: #155724; border: 2px solid #c3e6cb; }
         .error { background: #f8d7da; color: #721c24; border: 2px solid #f5c6cb; }
         
-        /* Footer */
         .footer { text-align: center; padding: 25px; background: #f5f5f5; color: #666; font-size: 0.9em; }
         
-        /* Loading Overlay */
         .loading-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center; }
         .loading-overlay.active { display: flex; }
         .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #1e5aa8; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        /* Mobile Responsive */
         @media (max-width: 768px) {
             .brand-wrapper { flex-direction: column; gap: 15px; }
             .brand-logo { height: 60px; }
@@ -1362,16 +1378,8 @@ FILTER_FORM_HTML = """
             .submit-btn, .add-bag-btn { max-width: 100%; font-size: 1em; padding: 14px 25px; }
             .ring-image-container { flex-direction: column; }
             .ring-image-container img { width: 100%; max-width: 250px; }
-            
-            /* Mobile: Stack image below field */
-            .field-with-image {
-                flex-direction: column;
-            }
-            .reference-image {
-                width: 100%;
-                max-width: 200px;
-                margin: 10px auto 0;
-            }
+            .field-with-image { flex-direction: column; }
+            .reference-image { width: 100%; max-width: 200px; margin: 10px auto 0; }
         }
 
         @media (max-width: 480px) {
@@ -1407,35 +1415,29 @@ FILTER_FORM_HTML = """
     {% if po_number %}
         <div><strong> Your PO Number:</strong> {{ po_number }}</div>
     {% endif %}
-
     {% if admin_quantity %}
         <div><strong> Your Quantity:</strong> {{ admin_quantity }}</div>
     {% endif %}
-
     {% if admin_size %}
         <div><strong> Your Size:</strong> {{ admin_size }}</div>
     {% endif %}
 </div>
 {% endif %}
 
-            
             <div class="info-box">
                 <strong>Dear sir/mam,</strong><br>
-                kindly fill the filter bag specifications necessary for production </div>
+                kindly fill the filter bag specifications necessary for production
+            </div>
             
             <form id="specForm" novalidate>
-
-
-        <div class="form-group">
-            <label>Your Name *</label>
-            <input type="text" id="clientNameInput" required>
-        </div>
-                <!-- Container for all bag specifications -->
-                <div class="bag-specifications-container" id="bagSpecsContainer">
-                    <!-- Bag cards will be added here dynamically -->
+                <div class="form-group">
+                    <label>Your Name *</label>
+                    <input type="text" id="clientNameInput" required>
                 </div>
 
-                <!-- Global Remarks -->
+                <div class="bag-specifications-container" id="bagSpecsContainer">
+                </div>
+
                 <div class="form-section">
                     <div class="section-title">Additional Information (Optional)</div>
                     <div class="form-group">
@@ -1459,7 +1461,6 @@ FILTER_FORM_HTML = """
     <script>
         let bagCounter = 1;
 
-        // Bag specification card template
         function createBagCard(bagNumber) {
             const cardHTML = `
                 <div class="bag-spec-card" data-bag-id="${bagNumber}">
@@ -1467,7 +1468,6 @@ FILTER_FORM_HTML = """
                         <div class="bag-spec-number">🛍️ Bag Specification #${bagNumber}</div>
                     </div>
 
-                    <!-- Bag Type Selection -->
                     <div class="form-group">
                         <label>Select Bag Type *</label>
                         <div class="bag-type-selection">
@@ -1496,80 +1496,51 @@ FILTER_FORM_HTML = """
                         </div>
                     </div>
 
-                    <!-- Collar Type Fields -->
-<div id="collarFields_${bagNumber}" class="conditional-section">
-    <h3 style="margin-bottom: 15px; color: #1f3c88;">⭕ Collar Type Specifications</h3>
+                    <div id="collarFields_${bagNumber}" class="conditional-section">
+                        <h3 style="margin-bottom: 15px; color: #1f3c88;">⭕ Collar Type Specifications</h3>
+                        <div class="form-group">
+                            <label>Collar OD (Outer Diameter) *</label>
+                            <input type="text" id="collarOD_${bagNumber}" list="collarSizes_${bagNumber}" placeholder="Enter or select size (e.g. 150mm)">
+                            <datalist id="collarSizes_${bagNumber}"></datalist>
+                        </div>
+                        <div class="form-group">
+                            <label>Collar ID (Inner Diameter) *</label>
+                            <input type="text" id="collarID_${bagNumber}" list="collarSizes_${bagNumber}" placeholder="Enter or select size (e.g. 140mm)">
+                        </div>
+                    </div>
 
-    <!-- Collar OD -->
-    <div class="form-group">
-        <label>Collar OD (Outer Diameter) *</label>
-        <input type="text"
-               id="collarOD_${bagNumber}"
-               list="collarSizes_${bagNumber}"
-               placeholder="Enter or select size (e.g. 150mm)">
-        <datalist id="collarSizes_${bagNumber}"></datalist>
-    </div>
+                    <div id="snapFields_${bagNumber}" class="conditional-section">
+                        <h3 style="margin-bottom: 15px; color: #1f3c88;">📌 Snap Type Specifications</h3>
+                        <div class="form-group">
+                            <label>Tubesheet Data *</label>
+                            <div class="field-with-image">
+                                <div class="field-wrapper">
+                                    <input type="text" id="tubesheetData_${bagNumber}" list="snapSizes_${bagNumber}" placeholder="Enter or select size" required>
+                                    <datalist id="snapSizes_${bagNumber}"></datalist>
+                                </div>
+                                <img src="{{ url_for('static', filename='tubesheet.jpeg') }}" class="reference-image" alt="Tubesheet Reference">
+                            </div>
+                        </div>
+                    </div>
 
-    <!-- Collar ID -->
-    <div class="form-group">
-        <label>Collar ID (Inner Diameter) *</label>
-        <input type="text"
-               id="collarID_${bagNumber}"
-               list="collarSizes_${bagNumber}"
-               placeholder="Enter or select size (e.g. 140mm)">
-    </div>
-</div>
-
-<!-- Snap Type Fields -->
-<div id="snapFields_${bagNumber}" class="conditional-section">
-    <h3 style="margin-bottom: 15px; color: #1f3c88;">📌 Snap Type Specifications</h3>
-
-    <div class="form-group">
-        <label>Tubesheet Data *</label>
-        <div class="field-with-image">
-            <div class="field-wrapper">
-                <input type="text"
-                       id="tubesheetData_${bagNumber}"
-                       list="snapSizes_${bagNumber}"
-                       placeholder="Enter or select size"
-                       required>
-                <datalist id="snapSizes_${bagNumber}"></datalist>
-            </div>
-            <img src="{{ url_for('static', filename='tubesheet.jpeg') }}" 
-                 class="reference-image" 
-                 alt="Tubesheet Reference">
-        </div>
-    </div>
-</div>
-
-                    <!-- Ring Type Fields -->
-<div id="ringFields_${bagNumber}" class="conditional-section">
-    <h3 style="margin-bottom: 15px; color: #1f3c88;"> Ring Type Specifications</h3>
-
-    <div class="form-group">
-        <label>Tubesheet Diameter *</label>
-        <div class="field-with-image">
-            <div class="field-wrapper">
-                <input type="text"
-                       id="tubesheetDia_${bagNumber}"
-                       list="ringSizes_${bagNumber}"
-                       placeholder="Enter or select diameter (e.g. 160mm)">
-                <datalist id="ringSizes_${bagNumber}"></datalist>
-            </div>
-            <img src="{{ url_for('static', filename='tubesheet.jpeg') }}" 
-                 class="reference-image" 
-                 alt="Tubesheet Reference">
-        </div>
-    </div>
-</div>
-
-
+                    <div id="ringFields_${bagNumber}" class="conditional-section">
+                        <h3 style="margin-bottom: 15px; color: #1f3c88;"> Ring Type Specifications</h3>
+                        <div class="form-group">
+                            <label>Tubesheet Diameter *</label>
+                            <div class="field-with-image">
+                                <div class="field-wrapper">
+                                    <input type="text" id="tubesheetDia_${bagNumber}" list="ringSizes_${bagNumber}" placeholder="Enter or select diameter (e.g. 160mm)">
+                                    <datalist id="ringSizes_${bagNumber}"></datalist>
+                                </div>
+                                <img src="{{ url_for('static', filename='tubesheet.jpeg') }}" class="reference-image" alt="Tubesheet Reference">
+                            </div>
+                        </div>
+                    </div>
+                </div>
             `;
             return cardHTML;
         }
 
-
-        // Attach bag type selection listeners
         function attachBagTypeListeners(bagNumber) {
             const cards = document.querySelectorAll(`[data-bag="${bagNumber}"]`);
             
@@ -1586,78 +1557,40 @@ FILTER_FORM_HTML = """
                     document.getElementById(`ringFields_${bagNumber}`).classList.remove('active');
                     
                     const type = radio.value;
-                  if (type === 'collar') {
-    document.getElementById(`collarFields_${bagNumber}`).classList.add('active');
-    loadBagSizes(bagNumber, 'collar');
-} 
-else if (type === 'snap') {
-    document.getElementById(`snapFields_${bagNumber}`).classList.add('active');
-    loadBagSizes(bagNumber, 'snap');
-} 
-else if (type === 'ring') {
-    document.getElementById(`ringFields_${bagNumber}`).classList.add('active');
-    loadBagSizes(bagNumber, 'ring');
-}
-
+                    if (type === 'collar') {
+                        document.getElementById(`collarFields_${bagNumber}`).classList.add('active');
+                        loadBagSizes(bagNumber, 'collar');
+                    } else if (type === 'snap') {
+                        document.getElementById(`snapFields_${bagNumber}`).classList.add('active');
+                        loadBagSizes(bagNumber, 'snap');
+                    } else if (type === 'ring') {
+                        document.getElementById(`ringFields_${bagNumber}`).classList.add('active');
+                        loadBagSizes(bagNumber, 'ring');
+                    }
                 });
             });
         }
-// Load sizes for a specific bag type
-async function loadBagSizes(bagNumber, bagType) {
-    try {
-        const response = await fetch(`/api/sizes/${bagType}`);
-        const data = await response.json();
 
-        if (!data.success) return;
+        async function loadBagSizes(bagNumber, bagType) {
+            try {
+                const response = await fetch(`/api/sizes/${bagType}`);
+                const data = await response.json();
+                if (!data.success) return;
 
-        // COLLAR
-        if (bagType === 'collar') {
-            const datalist = document.getElementById(`collarSizes_${bagNumber}`);
-            if (datalist) {
-                let optionsHTML = '';
-                data.sizes.forEach(size => {
-                    optionsHTML += `<option value="${size.size_name}"></option>`;
-                });
-                datalist.innerHTML = optionsHTML;
+                let datalistId = '';
+                if (bagType === 'collar') datalistId = `collarSizes_${bagNumber}`;
+                else if (bagType === 'snap') datalistId = `snapSizes_${bagNumber}`;
+                else if (bagType === 'ring') datalistId = `ringSizes_${bagNumber}`;
+
+                const datalist = document.getElementById(datalistId);
+                if (datalist) {
+                    datalist.innerHTML = data.sizes.map(s => `<option value="${s.size_name}"></option>`).join('');
+                }
+            } catch (error) {
+                console.error('Error loading sizes:', error);
             }
         }
 
-        // SNAP
-        if (bagType === 'snap') {
-            const datalist = document.getElementById(`snapSizes_${bagNumber}`);
-            if (datalist) {
-                let optionsHTML = '';
-                data.sizes.forEach(size => {
-                    optionsHTML += `<option value="${size.size_name}"></option>`;
-                });
-                datalist.innerHTML = optionsHTML;
-            }
-        }
-
-        // RING
-        if (bagType === 'ring') {
-            const datalist = document.getElementById(`ringSizes_${bagNumber}`);
-            if (datalist) {
-                let optionsHTML = '';
-                data.sizes.forEach(size => {
-                    optionsHTML += `<option value="${size.size_name}"></option>`;
-                });
-                datalist.innerHTML = optionsHTML;
-            }
-        }
-
-    } catch (error) {
-        console.error('Error loading sizes:', error);
-    }
-}
-
-
-        // Add bag button
-
-        // Initialize with first bag
-
-
-        // Form submission
         document.getElementById('specForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
@@ -1669,13 +1602,11 @@ async function loadBagSizes(bagNumber, bagType) {
             const bagCards = document.querySelectorAll('.bag-spec-card');
             const clientName = document.getElementById('clientNameInput').value.trim();
 
-if (!clientName) {
-    showMessage("Please enter your Name", "error");
-    return;
-}
+            if (!clientName) {
+                showMessage("Please enter your Name", "error");
+                return;
+            }
 
-
-            
             for (let card of bagCards) {
                 const bagId = card.getAttribute('data-bag-id');
                 const selectedRadio = document.querySelector(`input[name="bag_type_${bagId}"]:checked`);
@@ -1686,51 +1617,32 @@ if (!clientName) {
                 }
                 
                 const bagType = selectedRadio.value;
-                
-let bagData = {
-    bag_type: bagType,
-    client_name: clientName,
-};
+                let bagData = { bag_type: bagType, client_name: clientName };
 
-
-if (bagType === 'collar') {
-
-    const od = document.getElementById(`collarOD_${bagId}`).value.trim();
-    const id = document.getElementById(`collarID_${bagId}`).value.trim();
-
-    if (!od || !id) {
-        showMessage(`Please fill Collar OD and ID for Bag #${bagId}`, 'error');
-        return;
-    }
-
-    bagData.collar_od = od;
-    bagData.collar_id = id;
-
-}
-else if (bagType === 'snap') {
-
-    const tubesheet = document.getElementById(`tubesheetData_${bagId}`).value.trim();
-
-    if (!tubesheet) {
-        showMessage(`Please provide Tubesheet Data for Bag #${bagId}`, 'error');
-        return;
-    }
-
-    bagData.tubesheet_data = tubesheet;
-
-}
-else if (bagType === 'ring') {
-
-    const dia = document.getElementById(`tubesheetDia_${bagId}`).value.trim();
-
-    if (!dia) {
-        showMessage(`Please provide Tubesheet Diameter for Bag #${bagId}`, 'error');
-        return;
-    }
-
-    bagData.tubesheet_dia = dia;
-}
-
+                if (bagType === 'collar') {
+                    const od = document.getElementById(`collarOD_${bagId}`).value.trim();
+                    const id = document.getElementById(`collarID_${bagId}`).value.trim();
+                    if (!od || !id) {
+                        showMessage(`Please fill Collar OD and ID for Bag #${bagId}`, 'error');
+                        return;
+                    }
+                    bagData.collar_od = od;
+                    bagData.collar_id = id;
+                } else if (bagType === 'snap') {
+                    const tubesheet = document.getElementById(`tubesheetData_${bagId}`).value.trim();
+                    if (!tubesheet) {
+                        showMessage(`Please provide Tubesheet Data for Bag #${bagId}`, 'error');
+                        return;
+                    }
+                    bagData.tubesheet_data = tubesheet;
+                } else if (bagType === 'ring') {
+                    const dia = document.getElementById(`tubesheetDia_${bagId}`).value.trim();
+                    if (!dia) {
+                        showMessage(`Please provide Tubesheet Diameter for Bag #${bagId}`, 'error');
+                        return;
+                    }
+                    bagData.tubesheet_dia = dia;
+                }
                 
                 bags.push(bagData);
             }
@@ -1753,7 +1665,6 @@ else if (bagType === 'ring') {
                 });
                 
                 const data = await response.json();
-                
                 loadingOverlay.classList.remove('active');
                 
                 if (data.success) {
@@ -1780,17 +1691,11 @@ else if (bagType === 'ring') {
             messageDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
-        // Add slideOut animation
-        const style = document.createElement('style');
-        style.textContent = '@keyframes slideOut { to { opacity: 0; transform: translateX(-100%); } }';
-        document.head.appendChild(style);
-        
         document.addEventListener('DOMContentLoaded', function() {
-        const container = document.getElementById('bagSpecsContainer');
-        container.innerHTML = createBagCard(1);
-        attachBagTypeListeners(1);
-});
-
+            const container = document.getElementById('bagSpecsContainer');
+            container.innerHTML = createBagCard(1);
+            attachBagTypeListeners(1);
+        });
     </script>
 </body>
 </html>
@@ -1817,10 +1722,15 @@ SUBMISSIONS_HTML = """
         .badge { padding: 5px 15px; border-radius: 20px; font-size: 14px; font-weight: 600; }
         .badge-success { background: #d4edda; color: #155724; }
         .badge-pending { background: #fff3cd; color: #856404; }
-        .detail-row { display: grid; grid-template-columns: 200px 1fr; gap: 10px; margin: 10px 0; }
-        .detail-label { font-weight: 600; color: #555; }
+        .detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-top: 10px; }
+        .detail-item { background: white; border-radius: 8px; padding: 12px 15px; border: 1px solid #e0e0e0; }
+        .detail-label { font-size: 12px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .detail-value { font-size: 15px; color: #333; font-weight: 500; }
         .empty-state { text-align: center; padding: 60px 20px; color: #666; }
         .po-badge { background: #ffc107; color: #000; padding: 5px 12px; border-radius: 5px; font-weight: 600; font-size: 14px; margin-left: 10px; }
+        .qty-badge { background: #17a2b8; color: white; padding: 5px 12px; border-radius: 5px; font-weight: 600; font-size: 14px; margin-left: 6px; }
+        .size-badge { background: #6f42c1; color: white; padding: 5px 12px; border-radius: 5px; font-weight: 600; font-size: 14px; margin-left: 6px; }
+        .section-divider { margin: 15px 0; border: none; border-top: 1px dashed #ddd; }
     </style>
 </head>
 <body>
@@ -1847,66 +1757,104 @@ SUBMISSIONS_HTML = """
                                 {% if submission.po_number %}
                                     <span class="po-badge">PO: {{ submission.po_number }}</span>
                                 {% endif %}
+                                {% if submission.admin_quantity %}
+                                    <span class="qty-badge">Qty: {{ submission.admin_quantity }}</span>
+                                {% endif %}
+                                {% if submission.admin_size %}
+                                    <span class="size-badge">📏 {{ submission.admin_size }}</span>
+                                {% endif %}
                             </h3>
-                            <p style="color: #666; font-size: 14px;">Sent: {{ submission.created_at.strftime('%d %b %Y, %I:%M %p') }}</p>
+                            <p style="color: #666; font-size: 14px; margin-top: 5px;">
+                                Created: {{ submission.created_at.strftime('%d %b %Y, %I:%M %p') }}
+                            </p>
                         </div>
                         <span class="badge {% if submission.submitted %}badge-success{% else %}badge-pending{% endif %}">
                             {% if submission.submitted %}✓ Submitted{% else %}⏳ Pending{% endif %}
                         </span>
                     </div>
-                    
-                    <div class="detail-row">
-                        <div class="detail-label">Recipient Email</div>
-                        <div>{{ submission.recipient_email }}</div>
+
+                    <!-- Admin / PO Details -->
+                    <div class="detail-grid">
+                        <div class="detail-item">
+                            <div class="detail-label">📬 Recipient Email</div>
+                            <div class="detail-value">{{ submission.recipient_email }}</div>
+                        </div>
+                        {% if submission.po_number %}
+                        <div class="detail-item">
+                            <div class="detail-label">📋 PO Number</div>
+                            <div class="detail-value">{{ submission.po_number }}</div>
+                        </div>
+                        {% endif %}
+                        {% if submission.admin_quantity %}
+                        <div class="detail-item">
+                            <div class="detail-label">📦 Quantity (Admin)</div>
+                            <div class="detail-value">{{ submission.admin_quantity }}</div>
+                        </div>
+                        {% endif %}
+                        {% if submission.admin_size %}
+                        <div class="detail-item">
+                            <div class="detail-label">📏 Size (Admin)</div>
+                            <div class="detail-value">{{ submission.admin_size }}</div>
+                        </div>
+                        {% endif %}
                     </div>
                     
                     {% if submission.submitted %}
-                        <div class="detail-row">
-                            <div class="detail-label">Bag Type</div>
-                            <div>{{ submission.bag_type.title() if submission.bag_type else 'N/A' }}</div>
+                        <hr class="section-divider">
+                        <p style="font-size: 13px; color: #888; margin-bottom: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Client Submission Details</p>
+                        <div class="detail-grid">
+                            <div class="detail-item">
+                                <div class="detail-label">👤 Client Name</div>
+                                <div class="detail-value">{{ submission.client_name or 'N/A' }}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">📧 Client Email</div>
+                                <div class="detail-value">{{ submission.client_email or 'N/A' }}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">🛍️ Bag Type</div>
+                                <div class="detail-value">{{ submission.bag_type.title() if submission.bag_type else 'N/A' }}</div>
+                            </div>
+                            
+                            {% if submission.bag_type == 'collar' %}
+                            <div class="detail-item">
+                                <div class="detail-label">⭕ Collar OD</div>
+                                <div class="detail-value">{{ submission.collar_od or 'N/A' }}</div>
+                            </div>
+                            <div class="detail-item">
+                                <div class="detail-label">⭕ Collar ID</div>
+                                <div class="detail-value">{{ submission.collar_id or 'N/A' }}</div>
+                            </div>
+                            {% elif submission.bag_type == 'snap' %}
+                            <div class="detail-item">
+                                <div class="detail-label">📌 Tubesheet Data</div>
+                                <div class="detail-value">{{ submission.tubesheet_data or 'N/A' }}</div>
+                            </div>
+                            {% elif submission.bag_type == 'ring' %}
+                            <div class="detail-item">
+                                <div class="detail-label">💍 Tubesheet Diameter</div>
+                                <div class="detail-value">{{ submission.tubesheet_dia or 'N/A' }}</div>
+                            </div>
+                            {% endif %}
+
+                            <div class="detail-item">
+                                <div class="detail-label">🕐 Submitted At</div>
+                                <div class="detail-value">
+                                    {% if submission.submitted_at %}
+                                        {{ submission.submitted_at.strftime('%d %b %Y, %I:%M %p') }}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </div>
+                            </div>
                         </div>
-                        
-                        <div class="detail-row">
-                            <div class="detail-label">Client Email</div>
-                            <div>{{ submission.client_email or 'N/A' }}</div>
+
+                        {% if submission.remarks %}
+                        <div style="margin-top: 12px; background: white; border-radius: 8px; padding: 12px 15px; border: 1px solid #e0e0e0;">
+                            <div class="detail-label">📝 Remarks</div>
+                            <div class="detail-value" style="margin-top: 4px;">{{ submission.remarks }}</div>
                         </div>
-                        
-                        <div class="detail-row">
-                            <div class="detail-label">Quantity</div>
-                            <div>{{ submission.quantity or 'N/A' }}</div>
-                        </div>
-                        
-                        {% if submission.bag_type == 'collar' %}
-                            <div class="detail-row">
-                                <div class="detail-label">Collar OD</div>
-                                <div>{{ submission.collar_od or 'N/A' }}</div>
-                            </div>
-                            <div class="detail-row">
-                                <div class="detail-label">Collar ID</div>
-                                <div>{{ submission.collar_id or 'N/A' }}</div>
-                            </div>
-                        {% elif submission.bag_type == 'snap' %}
-                            <div class="detail-row">
-                                <div class="detail-label">Tubesheet Data</div>
-                                <div>{{ submission.tubesheet_data or 'N/A' }}</div>
-                            </div>
-                        {% elif submission.bag_type == 'ring' %}
-                            <div class="detail-row">
-                                <div class="detail-label">Tubesheet Diameter</div>
-                                <div>{{ submission.tubesheet_dia or 'N/A' }}</div>
-                            </div>
                         {% endif %}
-                        
-                        <div class="detail-row">
-                            <div class="detail-label">Submitted At</div>
-                            <div>
-                                {% if submission.submitted_at %}
-                                    {{ submission.submitted_at.strftime('%d %b %Y, %I:%M %p') }}
-                                {% else %}
-                                    N/A
-                                {% endif %}
-                            </div>
-                        </div>
                     {% endif %}
                 </div>
                 {% endfor %}
@@ -1937,10 +1885,8 @@ if __name__ == '__main__':
     print("\n💡 Features:")
     print("   ✅ PO Number support")
     print("   ✅ Generate form links without email")
-    print("   ✅ MULTIPLE BAG TYPES per PO ⭐ NEW")
-    print("   ✅ Add/Remove bags dynamically")
     print("   ✅ 3 Bag Types: Collar, Snap, Ring")
-    print("   ✅ Customizable Sizes Management 📏 NEW")
+    print("   ✅ Customizable Sizes Management")
     print("   ✅ Automatic sender notification")
     print("=" * 60)
     print("\n")
